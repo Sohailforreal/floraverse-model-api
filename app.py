@@ -3,12 +3,11 @@ from PIL import Image
 import numpy as np
 import io
 import json
+import tflite_runtime.interpreter as tflite
 
 app = Flask(__name__)
 
-# Load model using tensorflow lite
-import tensorflow as tf
-interpreter = tf.lite.Interpreter(model_path='models/plant_model.tflite')
+interpreter = tflite.Interpreter(model_path='models/plant_model.tflite')
 interpreter.allocate_tensors()
 
 with open('models/class_labels.json') as f:
