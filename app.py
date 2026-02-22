@@ -1,18 +1,16 @@
 from flask import Flask, request, jsonify
 from PIL import Image
 import numpy as np
-import io
-import json
 import tflite_runtime.interpreter as tflite
-from rembg import remove
-from PIL import Image
+import json
 import io
-
 
 app = Flask(__name__)
 
 interpreter = tflite.Interpreter(model_path='models/plant_model.tflite')
 interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
 with open('models/class_labels.json') as f:
     class_labels = json.load(f)
@@ -27,8 +25,7 @@ def predict():
         return jsonify({'error': 'No image provided'}), 400
     
     file = request.files['image']
-    img_bytes = file.read()
-    img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+    img = Image.open(io.BytesIO(file.read())).convert('RGB')
     
     # Center crop to square
     w, h = img.size
@@ -48,8 +45,6 @@ def predict():
     plant_name = class_labels[predicted_index]
     
     return jsonify({'plant': plant_name, 'confidence': round(confidence, 2)})
-    
-
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True)
