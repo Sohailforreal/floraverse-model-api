@@ -28,8 +28,6 @@ def predict():
     
     file = request.files['image']
     img_bytes = file.read()
-    
-    # Open image
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
     
     # Center crop to square
@@ -38,20 +36,9 @@ def predict():
     left = (w - min_dim) // 2
     top = (h - min_dim) // 2
     img = img.crop((left, top, left + min_dim, top + min_dim))
-    
-    # Remove background
-    result = remove(img)
-    bbox = result.getbbox()
-    if bbox:
-        result = result.crop(bbox)
-    white_bg = Image.new('RGB', result.size, (255, 255, 255))
-    white_bg.paste(result, mask=result.split()[3])
-    img = white_bg
-    
-    # Resize and predict
     img = img.resize((224, 224))
-    img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
     
+    img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
     interpreter.set_tensor(input_details[0]['index'], img_array)
     interpreter.invoke()
     output = interpreter.get_tensor(output_details[0]['index'])
@@ -61,7 +48,7 @@ def predict():
     plant_name = class_labels[predicted_index]
     
     return jsonify({'plant': plant_name, 'confidence': round(confidence, 2)})
-
+    
 
 
 if __name__ == '__main__':
