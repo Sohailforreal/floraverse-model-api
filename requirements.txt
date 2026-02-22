@@ -3,3 +3,4 @@ pillow
 numpy==1.24.3
 tflite-runtime==2.14.0
 gunicorn
+rembg
