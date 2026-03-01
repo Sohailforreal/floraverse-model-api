@@ -7,13 +7,32 @@ import io
 
 app = Flask(__name__)
 
-interpreter = tflite.Interpreter(model_path='models/plant_model.tflite')
-interpreter.allocate_tensors()
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
+# Final 30-plant model (98.83%)
+interpreter30 = tflite.Interpreter(model_path='models/plant_model_final.tflite')
+interpreter30.allocate_tensors()
+input30 = interpreter30.get_input_details()
+output30 = interpreter30.get_output_details()
+with open('models/class_labels_final.json') as f:
+    labels30 = json.load(f)
 
-with open('models/class_labels.json') as f:
-    class_labels = json.load(f)
+# 7-plant model (97.35%)
+interpreter7 = tflite.Interpreter(model_path='models/plant_model_balanced.tflite')
+interpreter7.allocate_tensors()
+input7 = interpreter7.get_input_details()
+output7 = interpreter7.get_output_details()
+with open('models/class_labels_balanced.json') as f:
+    labels7 = json.load(f)
+
+print("✅ Both models loaded!")
+
+def process_image(file_bytes):
+    img = Image.open(io.BytesIO(file_bytes)).convert('RGB')
+    w, h = img.size
+    min_dim = min(w, h)
+    img = img.crop(((w-min_dim)//2, (h-min_dim)//2,
+                    (w+min_dim)//2, (h+min_dim)//2))
+    img = img.resize((224, 224))
+    return np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
 
 @app.route('/')
 def home():
@@ -23,28 +42,29 @@ def home():
 def predict():
     if 'image' not in request.files:
         return jsonify({'error': 'No image provided'}), 400
-    
-    file = request.files['image']
-    img = Image.open(io.BytesIO(file.read())).convert('RGB')
-    
-    # Center crop to square
-    w, h = img.size
-    min_dim = min(w, h)
-    left = (w - min_dim) // 2
-    top = (h - min_dim) // 2
-    img = img.crop((left, top, left + min_dim, top + min_dim))
-    img = img.resize((224, 224))
-    
-    img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
-    interpreter.set_tensor(input_details[0]['index'], img_array)
-    interpreter.invoke()
-    output = interpreter.get_tensor(output_details[0]['index'])
-    
-    predicted_index = str(np.argmax(output))
-    confidence = float(np.max(output)) * 100
-    plant_name = class_labels[predicted_index]
-    
-    return jsonify({'plant': plant_name, 'confidence': round(confidence, 2)})
+    img_array = process_image(request.files['image'].read())
+    interpreter30.set_tensor(input30[0]['index'], img_array)
+    interpreter30.invoke()
+    output = interpreter30.get_tensor(output30[0]['index'])
+    plant = labels30[str(np.argmax(output))]
+    confidence = round(float(np.max(output)) * 100, 2)
+    print(f"✅ 30-plant: {plant} ({confidence}%)")
+    return jsonify({'plant': plant, 'confidence': confidence})
+
+@app.route('/predict7', methods=['POST'])
+def predict7():
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image provided'}), 400
+    img_array = process_image(request.files['image'].read())
+    interpreter7.set_tensor(input7[0]['index'], img_array)
+    interpreter7.invoke()
+    output = interpreter7.get_tensor(output7[0]['index'])
+    plant = labels7[str(np.argmax(output))]
+    confidence = round(float(np.max(output)) * 100, 2)
+    print(f"✅ 7-plant: {plant} ({confidence}%)")
+    return jsonify({'plant': plant, 'confidence': confidence})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
