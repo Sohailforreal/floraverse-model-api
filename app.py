@@ -10,7 +10,6 @@ import cv2
 
 app = Flask(__name__)
 
-# New CLAHE model (99.83%)
 interpreter = tflite.Interpreter(model_path='models/plant_model_clahe.tflite')
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
@@ -19,6 +18,19 @@ with open('models/class_labels_clahe.json') as f:
     labels = json.load(f)
 
 print("✅ CLAHE model loaded!")
+
+def has_complex_background(img_pil):
+    img_array = np.array(img_pil.convert('RGB'))
+    corners = [
+        img_array[0:20, 0:20],
+        img_array[0:20, -20:],
+        img_array[-20:, 0:20],
+        img_array[-20:, -20:]
+    ]
+    for corner in corners:
+        if corner.mean() < 200:
+            return True
+    return False
 
 def apply_clahe(img_pil):
     img_cv = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2LAB)
@@ -33,15 +45,21 @@ def preprocess_input_mobilenet(img_array):
     return img_array
 
 def process_image(file_bytes):
-    # Remove background first
-    try:
-        removed = remove(file_bytes)
-        img = Image.open(io.BytesIO(removed)).convert('RGBA')
-        white_bg = Image.new('RGB', img.size, (255, 255, 255))
-        white_bg.paste(img, mask=img.split()[3])
-        img = white_bg
-    except:
-        img = Image.open(io.BytesIO(file_bytes)).convert('RGB')
+    img_raw = Image.open(io.BytesIO(file_bytes)).convert('RGB')
+
+    if has_complex_background(img_raw):
+        print("🔍 Complex background detected — applying rembg")
+        try:
+            removed = remove(file_bytes)
+            img = Image.open(io.BytesIO(removed)).convert('RGBA')
+            white_bg = Image.new('RGB', img.size, (255, 255, 255))
+            white_bg.paste(img, mask=img.split()[3])
+            img = white_bg
+        except:
+            img = img_raw
+    else:
+        print("✅ Plain background detected — skipping rembg")
+        img = img_raw
 
     # Tight crop non-white pixels
     img_array = np.array(img)
@@ -55,15 +73,14 @@ def process_image(file_bytes):
         cmin, cmax = np.where(cols)[0][[0,-1]]
         pad = 10
         h, w = img_array.shape[:2]
-        rmin, rmax = max(0,rmin-pad), min(h,rmax+pad)
-        cmin, cmax = max(0,cmin-pad), min(w,cmax+pad)
+        rmin, rmax = max(0, rmin-pad), min(h, rmax+pad)
+        cmin, cmax = max(0, cmin-pad), min(w, cmax+pad)
         img = img.crop((cmin, rmin, cmax, rmax))
+
     img = apply_clahe(img)
     img = img.resize((224, 224), Image.LANCZOS)
     img_array = preprocess_input_mobilenet(np.array(img, dtype=np.float32))
     return np.expand_dims(img_array, axis=0)
-
-
 
 @app.route('/')
 def home():
